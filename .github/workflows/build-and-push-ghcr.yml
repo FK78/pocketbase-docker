@@ -1,0 +1,53 @@
+name: build-and-push-ghcr
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PB_VERSION: 0.40.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg PB_VERSION=${{ env.PB_VERSION }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            .
+
+      - name: Push image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
